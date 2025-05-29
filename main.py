@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import json
+import base64
 from ollama import Client
 
 st.set_page_config(page_title="Multimodal RAG", layout="centered")
@@ -10,6 +11,10 @@ client = Client(host="http://localhost:11434")
 DETAILS_CSV = "web_scrape_amazon/details.csv"
 DOCUMENTS_DIR = "web_scrape_amazon/documents"
 IMAGE_DIR = "web_scrape_amazon/images"
+
+def encode_image_base64(path):
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
 
 @st.cache_data
 def load_metadata():
@@ -28,10 +33,11 @@ def get_text_chunks(product_id):
     return chunks
 
 def ask_llava(prompt, image_paths):
+    images_b64 = [encode_image_base64(p) for p in image_paths]
     response = client.generate(
         model="llava",
         prompt=prompt,
-        images=image_paths
+        images=images_b64
     )
     return response["response"]
 
@@ -93,16 +99,16 @@ with tab2:
         "Which one is more lightweight?"
     ]
 
-    comp_q = st.selectbox("Choose a comparison question", compare_qs)
+    comp_q = st.selectbox("Choose a comparison question", [""] + compare_qs)
+    custom_comp_q = st.text_input("Or write your own comparison question")
+    final_comp_q = custom_comp_q.strip() if custom_comp_q else comp_q.strip()
 
-    if st.button("Compare Products", key="compare"):
+    if final_comp_q and st.button("Compare Products", key="compare"):
         p1 = next(p for p in metadata if p["title"] == title1)
         p2 = next(p for p in metadata if p["title"] == title2)
 
         path1 = os.path.join("web_scrape_amazon", p1["image_path"])
         path2 = os.path.join("web_scrape_amazon", p2["image_path"])
-
-        col1, col2 = st.columns(2)
 
         col1, col2 = st.columns(2)
 
@@ -127,7 +133,7 @@ with tab2:
             Product 2: {p2['title']}
             {context2}
 
-            Question: {comp_q}
+            Question: {final_comp_q}
             """
 
             answer = ask_llava(prompt, [path1, path2])
